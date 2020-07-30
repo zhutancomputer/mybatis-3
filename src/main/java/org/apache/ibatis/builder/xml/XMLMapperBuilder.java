@@ -15,39 +15,21 @@
  */
 package org.apache.ibatis.builder.xml;
 
-import java.io.InputStream;
-import java.io.Reader;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
-import org.apache.ibatis.builder.BaseBuilder;
-import org.apache.ibatis.builder.BuilderException;
-import org.apache.ibatis.builder.CacheRefResolver;
-import org.apache.ibatis.builder.IncompleteElementException;
-import org.apache.ibatis.builder.MapperBuilderAssistant;
-import org.apache.ibatis.builder.ResultMapResolver;
+import org.apache.ibatis.builder.*;
 import org.apache.ibatis.cache.Cache;
 import org.apache.ibatis.executor.ErrorContext;
 import org.apache.ibatis.io.Resources;
-import org.apache.ibatis.mapping.Discriminator;
-import org.apache.ibatis.mapping.ParameterMapping;
-import org.apache.ibatis.mapping.ParameterMode;
-import org.apache.ibatis.mapping.ResultFlag;
-import org.apache.ibatis.mapping.ResultMap;
-import org.apache.ibatis.mapping.ResultMapping;
+import org.apache.ibatis.mapping.*;
 import org.apache.ibatis.parsing.XNode;
 import org.apache.ibatis.parsing.XPathParser;
 import org.apache.ibatis.reflection.MetaClass;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.type.JdbcType;
 import org.apache.ibatis.type.TypeHandler;
+
+import java.io.InputStream;
+import java.io.Reader;
+import java.util.*;
 
 /**
  * @author Clinton Begin
@@ -90,10 +72,31 @@ public class XMLMapperBuilder extends BaseBuilder {
     this.resource = resource;
   }
 
+  /**
+   *
+   * 解析mapper节点的内容, 会有两种情况进来, resource代表是具体某个xml
+   *
+   * 1. 直接通过指定的resource或者url进来
+   * 先解析完mapper标签后, 创建对应的sql
+   * loadedResources添加当前加载的UserMapper.xml, 用来标识当前资源已经加载过了
+   * loadedResources添加当前namespace:cn.zhutan.mapper.UserMapper, 用来标识当前的命名空间已经加载过了(就不会再去通过命名空间去加载xml资源了)
+   * knownMappers添加当前UserMapper代理工厂, 用来生成mapper代理对象
+   *
+   * 2. 通过class的方式进来
+   *
+   *
+   */
   public void parse() {
+    // 资源xxxMapper.xml未被加载过, 才加载
     if (!configuration.isResourceLoaded(resource)) {
+
+      // 通过/mapper路径解析出mybatis的XNode(XNode在创建的时候已经替换当前节点属性及内容体中的占位符了, 但子节点并不会替换)
       configurationElement(parser.evalNode("/mapper"));
+
+      // loadedResources添加xxxMapper.xml代表该资源被加载过
       configuration.addLoadedResource(resource);
+
+      // 绑定命名空间后, 在解析接口时就不会再去通过接口找xml了
       bindMapperForNamespace();
     }
 
@@ -106,6 +109,7 @@ public class XMLMapperBuilder extends BaseBuilder {
     return sqlFragments.get(refid);
   }
 
+  // 最终封装成MappedStatement对象
   private void configurationElement(XNode context) {
     try {
       String namespace = context.getStringAttribute("namespace");
@@ -116,8 +120,14 @@ public class XMLMapperBuilder extends BaseBuilder {
       cacheRefElement(context.evalNode("cache-ref"));
       cacheElement(context.evalNode("cache"));
       parameterMapElement(context.evalNodes("/mapper/parameterMap"));
+
+      // 解析resultMap标签
       resultMapElements(context.evalNodes("/mapper/resultMap"));
+
+      // 解析sql标签
       sqlElement(context.evalNodes("/mapper/sql"));
+
+      // 解析select|insert|update|delete标签
       buildStatementFromContext(context.evalNodes("select|insert|update|delete"));
     } catch (Exception e) {
       throw new BuilderException("Error parsing Mapper XML. The XML location is '" + resource + "'. Cause: " + e, e);
@@ -137,6 +147,8 @@ public class XMLMapperBuilder extends BaseBuilder {
       try {
         statementParser.parseStatementNode();
       } catch (IncompleteElementException e) {
+
+        // 在xml中有可能顺序问题, 导致有些标签依赖于其他标签, 那么就会出现解析不完全的情况, 就先放到这里, 后续再继续解析
         configuration.addIncompleteStatement(statementParser);
       }
     }
@@ -256,10 +268,14 @@ public class XMLMapperBuilder extends BaseBuilder {
 
   private ResultMap resultMapElement(XNode resultMapNode, List<ResultMapping> additionalResultMappings, Class<?> enclosingType) {
     ErrorContext.instance().activity("processing " + resultMapNode.getValueBasedIdentifier());
+
+    // type的来源: type > ofType > resultType > javaType
     String type = resultMapNode.getStringAttribute("type",
         resultMapNode.getStringAttribute("ofType",
             resultMapNode.getStringAttribute("resultType",
                 resultMapNode.getStringAttribute("javaType"))));
+
+    // 先从别名map解析获取class, 否则直接获取class
     Class<?> typeClass = resolveClass(type);
     if (typeClass == null) {
       typeClass = inheritEnclosingType(resultMapNode, enclosingType);
@@ -268,10 +284,16 @@ public class XMLMapperBuilder extends BaseBuilder {
     List<ResultMapping> resultMappings = new ArrayList<>(additionalResultMappings);
     List<XNode> resultChildren = resultMapNode.getChildren();
     for (XNode resultChild : resultChildren) {
+
+      // 解析<constructor>标签
       if ("constructor".equals(resultChild.getName())) {
         processConstructorElement(resultChild, typeClass, resultMappings);
+
+        // 解析<discriminator>标签
       } else if ("discriminator".equals(resultChild.getName())) {
         discriminator = processDiscriminatorElement(resultChild, typeClass, resultMappings);
+
+        // 解析<result>, <id>, <assosation>等标签
       } else {
         List<ResultFlag> flags = new ArrayList<>();
         if ("id".equals(resultChild.getName())) {
@@ -386,6 +408,8 @@ public class XMLMapperBuilder extends BaseBuilder {
     String typeHandler = context.getStringAttribute("typeHandler");
     String resultSet = context.getStringAttribute("resultSet");
     String foreignColumn = context.getStringAttribute("foreignColumn");
+
+    // 先判断fetchType是否配置lazy, 是则lazy, 否则再判断settings中lazyLoadingEnabled是否配置lazy, 是则lazy, 否则eager
     boolean lazy = "lazy".equals(context.getStringAttribute("fetchType", configuration.isLazyLoadingEnabled() ? "lazy" : "eager"));
     Class<?> javaTypeClass = resolveClass(javaType);
     Class<? extends TypeHandler<?>> typeHandlerClass = resolveClass(typeHandler);
@@ -424,10 +448,14 @@ public class XMLMapperBuilder extends BaseBuilder {
       } catch (ClassNotFoundException e) {
         // ignore, bound type is not required
       }
+
+      // knownMappers存在, 代表是从接口那边解析过来的
       if (boundType != null && !configuration.hasMapper(boundType)) {
         // Spring may not know the real resource name so we set a flag
         // to prevent loading again this resource from the mapper interface
         // look at MapperAnnotationBuilder#loadXmlResource
+
+        // 在loadedResources集合中添加namespace键后, 则接口class转换后的默认资源文件就不会再去加载了
         configuration.addLoadedResource("namespace:" + namespace);
         configuration.addMapper(boundType);
       }

@@ -15,17 +15,14 @@
  */
 package org.apache.ibatis.parsing;
 
+import org.w3c.dom.CharacterData;
+import org.w3c.dom.*;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.Supplier;
-
-import org.w3c.dom.CharacterData;
-import org.w3c.dom.Element;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 
 /**
  * @author Clinton Begin
@@ -39,12 +36,20 @@ public class XNode {
   private final Properties variables;
   private final XPathParser xpathParser;
 
+  // 在构造器中, 解析当前节点的属性和内容体
   public XNode(XPathParser xpathParser, Node node, Properties variables) {
     this.xpathParser = xpathParser;
     this.node = node;
     this.name = node.getNodeName();
+
+    // 这个variables里面装着从properties里面解析出来的键值对
     this.variables = variables;
+
+    // 解析节点的属性, 这里会使用variables的键值去替换所有属性${xxx}占位符
     this.attributes = parseAttributes(node);
+
+    // 解析当前节点的CDATA_SECTION_NODE或者TEXT_NODE即文本内容, 非节点, 或者无文本时, 解析第一个子节点的CDATA_SECTION_NODE或者TEXT_NODE
+    // 这里会使用variables的键值去替换所有文本${xxx}占位符
     this.body = parseBody(node);
   }
 
@@ -232,6 +237,13 @@ public class XNode {
     return getStringAttribute(name, (String) null);
   }
 
+  /**
+   * 获取属性值
+   *
+   * @param name 键名
+   * @param def 根据键名无法获取键值时, 默认返回def
+   * @return 返回键值或者def
+   */
   public String getStringAttribute(String name, String def) {
     String value = attributes.getProperty(name);
     if (value == null) {
@@ -306,13 +318,20 @@ public class XNode {
     }
   }
 
+  // 将第三方w3c中Node转为mybatis自己的XNode, 并且将一级子节点的占位符替换为具体的值
   public List<XNode> getChildren() {
     List<XNode> children = new ArrayList<>();
+
+    // 获取w3c的nodeList
     NodeList nodeList = node.getChildNodes();
     if (nodeList != null) {
       for (int i = 0, n = nodeList.getLength(); i < n; i++) {
         Node node = nodeList.item(i);
+
+        // 得到为element节点的node
         if (node.getNodeType() == Node.ELEMENT_NODE) {
+
+          // 将每一个element节点元素转为mybatis自己写XNode, 并且一个个添加到XNode集合中
           children.add(new XNode(xpathParser, node, variables));
         }
       }
@@ -322,6 +341,8 @@ public class XNode {
 
   public Properties getChildrenAsProperties() {
     Properties properties = new Properties();
+
+    // getChildren方法会解析
     for (XNode child : getChildren()) {
       String name = child.getStringAttribute("name");
       String value = child.getStringAttribute("value");
@@ -335,13 +356,20 @@ public class XNode {
   @Override
   public String toString() {
     StringBuilder builder = new StringBuilder();
+
+    // 调用重载的toString方法
     toString(builder, 0);
     return builder.toString();
   }
 
+  // 递归解析当前元素及子元素的占位$
   private void toString(StringBuilder builder, int level) {
     builder.append("<");
+
+    // 当前的节点名称
     builder.append(name);
+
+    // 当前节点的属性及内容体在构造函数中已经解析过占位符了, attributes存取着已经解析后的属性值
     for (Map.Entry<Object, Object> entry : attributes.entrySet()) {
       builder.append(" ");
       builder.append(entry.getKey());
@@ -349,11 +377,17 @@ public class XNode {
       builder.append(entry.getValue());
       builder.append("\"");
     }
+
+    // 这个getChildren方法, 会解析一级子节点的属性和内容体占位符
+    // 在IDEA中要是查看XNode对象信息的话, 会调用的toString方法, 看到的都是已经替换占位符后的结果, 但是上并没有解析占位符
+    // 容易误以为SQL中的${username}已经被解析了, 实际上, SQL中的${username}是在parseDynamicTags方法中被解析的, toString解析后的结果只是作为一个返回值, 跟实际上的SQL并无关系
     List<XNode> children = getChildren();
     if (!children.isEmpty()) {
       builder.append(">\n");
       for (XNode child : children) {
         indent(builder, level + 1);
+
+        // 递归调用子类的toString方法
         child.toString(builder, level + 1);
       }
       indent(builder, level);
@@ -373,19 +407,25 @@ public class XNode {
     builder.append("\n");
   }
 
+  // 根据level来拼接多少空格符的问题
   private void indent(StringBuilder builder, int level) {
     for (int i = 0; i < level; i++) {
       builder.append("    ");
     }
   }
 
+  // 将该节点属性中的占位符进行替换解析
   private Properties parseAttributes(Node n) {
     Properties attributes = new Properties();
     NamedNodeMap attributeNodes = n.getAttributes();
     if (attributeNodes != null) {
       for (int i = 0; i < attributeNodes.getLength(); i++) {
         Node attribute = attributeNodes.item(i);
+
+        // 通过PropertyParser.parse替换属性占位符
         String value = PropertyParser.parse(attribute.getNodeValue(), variables);
+
+        // 属性用name=value键值对返回properties
         attributes.put(attribute.getNodeName(), value);
       }
     }
@@ -393,6 +433,8 @@ public class XNode {
   }
 
   private String parseBody(Node node) {
+
+    // 返回的数据: 已经用variables去替换占位符${xxx}后的数据
     String data = getBodyData(node);
     if (data == null) {
       NodeList children = node.getChildNodes();
@@ -407,10 +449,13 @@ public class XNode {
     return data;
   }
 
+  // 只解析文本和CDATA节, 用variables去替换所有占位符
   private String getBodyData(Node child) {
     if (child.getNodeType() == Node.CDATA_SECTION_NODE
         || child.getNodeType() == Node.TEXT_NODE) {
       String data = ((CharacterData) child).getData();
+
+      // 调用PropertyParser.parse来解析${xxx}
       data = PropertyParser.parse(data, variables);
       return data;
     }

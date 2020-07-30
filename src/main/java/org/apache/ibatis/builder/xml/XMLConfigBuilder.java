@@ -15,12 +15,6 @@
  */
 package org.apache.ibatis.builder.xml;
 
-import java.io.InputStream;
-import java.io.Reader;
-import java.util.Properties;
-
-import javax.sql.DataSource;
-
 import org.apache.ibatis.builder.BaseBuilder;
 import org.apache.ibatis.builder.BuilderException;
 import org.apache.ibatis.datasource.DataSourceFactory;
@@ -39,13 +33,14 @@ import org.apache.ibatis.reflection.MetaClass;
 import org.apache.ibatis.reflection.ReflectorFactory;
 import org.apache.ibatis.reflection.factory.ObjectFactory;
 import org.apache.ibatis.reflection.wrapper.ObjectWrapperFactory;
-import org.apache.ibatis.session.AutoMappingBehavior;
-import org.apache.ibatis.session.AutoMappingUnknownColumnBehavior;
-import org.apache.ibatis.session.Configuration;
-import org.apache.ibatis.session.ExecutorType;
-import org.apache.ibatis.session.LocalCacheScope;
+import org.apache.ibatis.session.*;
 import org.apache.ibatis.transaction.TransactionFactory;
 import org.apache.ibatis.type.JdbcType;
+
+import javax.sql.DataSource;
+import java.io.InputStream;
+import java.io.Reader;
+import java.util.Properties;
 
 /**
  * @author Clinton Begin
@@ -78,6 +73,7 @@ public class XMLConfigBuilder extends BaseBuilder {
     this(inputStream, environment, null);
   }
 
+  // 通过这个构造方法可以先给configuration中添加一些propperties到variables中, 同时xPathParser中的variables也保持一份
   public XMLConfigBuilder(InputStream inputStream, String environment, Properties props) {
     this(new XPathParser(inputStream, true, props, new XMLMapperEntityResolver()), environment, props);
   }
@@ -86,16 +82,24 @@ public class XMLConfigBuilder extends BaseBuilder {
     super(new Configuration());
     ErrorContext.instance().resource("SQL Mapper Configuration");
     this.configuration.setVariables(props);
+
+    // 每个XMLConfigBuilder只能解析一次, 这是个标志
     this.parsed = false;
     this.environment = environment;
     this.parser = parser;
   }
 
   public Configuration parse() {
+
+    // 已经解析过后, 不能再解析, 则抛异常
     if (parsed) {
       throw new BuilderException("Each XMLConfigBuilder can only be used once.");
     }
+
+    // 解析过后置为false
     parsed = true;
+
+    // 核心, 解析configuration配置信息
     parseConfiguration(parser.evalNode("/configuration"));
     return configuration;
   }
@@ -103,20 +107,42 @@ public class XMLConfigBuilder extends BaseBuilder {
   private void parseConfiguration(XNode root) {
     try {
       // issue #117 read properties first
+
+      // 解析<properties>标签: 将指定文件的properties解析为键值对放到variables中, 后续标签解析会解析占位符${xxx}, 进行替换
       propertiesElement(root.evalNode("properties"));
+
+      // 解析<settings>标签, name=value形式装在Properties中
       Properties settings = settingsAsProperties(root.evalNode("settings"));
+
+      // 加载setting配置vfsImpl到configuration, 值以逗号隔开, 但是当前使用的是逗号后面最后一个
       loadCustomVfs(settings);
+
+      // 加载setting配置logImpl到configuration
       loadCustomLogImpl(settings);
+
+      // 解析<typeAliases>标签, 往别名typeAliases的map中注册添加
       typeAliasesElement(root.evalNode("typeAliases"));
+
+      // 解析plugins
       pluginElement(root.evalNode("plugins"));
+
+      // 解析objectFactory
       objectFactoryElement(root.evalNode("objectFactory"));
+
+      // 解析objectWrapperFactory
       objectWrapperFactoryElement(root.evalNode("objectWrapperFactory"));
+
+      // 解析reflectorFactory
       reflectorFactoryElement(root.evalNode("reflectorFactory"));
       settingsElement(settings);
       // read it after objectFactory and objectWrapperFactory issue #631
+
+      // 解析<environments>标签, 创建好environment, datasource, transactionFactory
       environmentsElement(root.evalNode("environments"));
       databaseIdProviderElement(root.evalNode("databaseIdProvider"));
       typeHandlerElement(root.evalNode("typeHandlers"));
+
+      // 解析<mappers>标签, 加载mapper.xml文件, 解析mapper接口
       mapperElement(root.evalNode("mappers"));
     } catch (Exception e) {
       throw new BuilderException("Error parsing SQL Mapper Configuration. Cause: " + e, e);
@@ -127,9 +153,13 @@ public class XMLConfigBuilder extends BaseBuilder {
     if (context == null) {
       return new Properties();
     }
+
+    // 把一级子节点, 以name=value形式转为properties, 且是替换占位符后的值
     Properties props = context.getChildrenAsProperties();
     // Check that all settings are known to the configuration class
     MetaClass metaConfig = MetaClass.forClass(Configuration.class, localReflectorFactory);
+
+    // 在settings配置的每一个setting, 理论上应该都能在Configuration中找到set方法, 找不到则报错
     for (Object key : props.keySet()) {
       if (!metaConfig.hasSetter(String.valueOf(key))) {
         throw new BuilderException("The setting " + key + " is not known.  Make sure you spelled it correctly (case sensitive).");
@@ -157,13 +187,18 @@ public class XMLConfigBuilder extends BaseBuilder {
     configuration.setLogImpl(logImpl);
   }
 
+  // 别名的优先顺序: alias > @Alias > 默认简单类名
   private void typeAliasesElement(XNode parent) {
     if (parent != null) {
       for (XNode child : parent.getChildren()) {
+
+        // 解析package子标签
         if ("package".equals(child.getName())) {
           String typeAliasPackage = child.getStringAttribute("name");
           configuration.getTypeAliasRegistry().registerAliases(typeAliasPackage);
         } else {
+
+          // 解析typeAlias标签, 需指定type为class全限定名, alias可选
           String alias = child.getStringAttribute("alias");
           String type = child.getStringAttribute("type");
           try {
@@ -221,22 +256,40 @@ public class XMLConfigBuilder extends BaseBuilder {
 
   private void propertiesElement(XNode context) throws Exception {
     if (context != null) {
+
+      // 这个地方其实已经有解析${xxx}了, 只不过还没有加载配置文件中的properties, 但是可以通过构造器传入properties
       Properties defaults = context.getChildrenAsProperties();
+
+      // 获取resource标签
       String resource = context.getStringAttribute("resource");
+
+      // 获取url标签
       String url = context.getStringAttribute("url");
+
+      // resource和url不能同时有值
       if (resource != null && url != null) {
         throw new BuilderException("The properties element cannot specify both a URL and a resource based property file reference.  Please specify one or the other.");
       }
+
+      // 通过resource加载对应文件的键值对, 并且放到defaults中
       if (resource != null) {
         defaults.putAll(Resources.getResourceAsProperties(resource));
+
+        // 通过url加载对应文件的键值对, 并且放到defaults中
       } else if (url != null) {
         defaults.putAll(Resources.getUrlAsProperties(url));
       }
+
+      // 读取之前的properties, 因为有可能直接通过构造器或者其他方式先往configuration里面塞了一些属性
       Properties vars = configuration.getVariables();
       if (vars != null) {
         defaults.putAll(vars);
       }
+
+      // xPathParser中的variables也维持一份
       parser.setVariables(defaults);
+
+      // 重新设置configuration中的variables键值对
       configuration.setVariables(defaults);
     }
   }
@@ -275,12 +328,22 @@ public class XMLConfigBuilder extends BaseBuilder {
   private void environmentsElement(XNode context) throws Exception {
     if (context != null) {
       if (environment == null) {
+
+        // 获取<environments>元素默认指定环境default值
         environment = context.getStringAttribute("default");
       }
       for (XNode child : context.getChildren()) {
+
+        // child元素为environment, 获取环境的id
         String id = child.getStringAttribute("id");
+
+        // 判断当前环境是否是默认环境
         if (isSpecifiedEnvironment(id)) {
+
+          // 解析<transactionManager>标签
           TransactionFactory txFactory = transactionManagerElement(child.evalNode("transactionManager"));
+
+          // 解析<dataSource>标签
           DataSourceFactory dsFactory = dataSourceElement(child.evalNode("dataSource"));
           DataSource dataSource = dsFactory.getDataSource();
           Environment.Builder environmentBuilder = new Environment.Builder(id)
@@ -360,16 +423,35 @@ public class XMLConfigBuilder extends BaseBuilder {
     }
   }
 
+  /**
+   *
+   * 加载资源有两种方式:
+   * 1. 直接指定xml加载(配置resource或者url), 此时xml的名字可以任意取, 无关紧要
+   * 2. 通过class(配置class或者package), 但是名字有限制, xml的目录和mapper所在的包结构一致, 命名也是和mapper一样(xml后缀为.xml)
+   *
+   * @param parent parent
+   * @throws Exception Exception
+   */
   private void mapperElement(XNode parent) throws Exception {
     if (parent != null) {
       for (XNode child : parent.getChildren()) {
+
+        // 解析<package>标签
         if ("package".equals(child.getName())) {
           String mapperPackage = child.getStringAttribute("name");
+
+          // 配置package时, 默认的xml解析文件需要和包同路径并且名字为对应的类名.xml
           configuration.addMappers(mapperPackage);
         } else {
           String resource = child.getStringAttribute("resource");
           String url = child.getStringAttribute("url");
           String mapperClass = child.getStringAttribute("class");
+
+          /*
+          指定resource或者url时, 解析具体某个资源文件, 文件名可以随意指定
+          namespace指定的接口类如cn.zhutan.mapper.UserMapper是否加载cn/zhutan/mapper/UserMapper.xml的判断标准是
+          loadedResources加载的资源中是否有键: namespace:cn.zhutan.mapper.UserMapper
+           */
           if (resource != null && url == null && mapperClass == null) {
             ErrorContext.instance().resource(resource);
             InputStream inputStream = Resources.getResourceAsStream(resource);

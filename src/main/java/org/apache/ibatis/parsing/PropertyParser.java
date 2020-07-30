@@ -53,6 +53,8 @@ public class PropertyParser {
   public static String parse(String string, Properties variables) {
     VariableTokenHandler handler = new VariableTokenHandler(variables);
     GenericTokenParser parser = new GenericTokenParser("${", "}", handler);
+
+    // 解析的规则, 大概是截取${和}之间的字符串, 去variables找键值替换
     return parser.parse(string);
   }
 
