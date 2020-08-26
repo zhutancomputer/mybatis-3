@@ -31,15 +31,23 @@ import java.util.Map.Entry;
  */
 public class Reflector {
 
+  // 反射对应的class类型
   private final Class<?> type;
+  // 可读属性集合, 存在get方法的属性
   private final String[] readablePropertyNames;
+  // 可写属性结婚, 存在set方法的属性
   private final String[] writablePropertyNames;
+  // 记录set方法, key是属性名, value是Invoker对象
   private final Map<String, Invoker> setMethods = new HashMap<>();
+  // 记录get方法, key是属性名, value是Invoker对象
   private final Map<String, Invoker> getMethods = new HashMap<>();
+  // 记录set方法参数类型, key是属性名, value是参数类型
   private final Map<String, Class<?>> setTypes = new HashMap<>();
+  // 记录get方法返回值类型, key是属性名, value是返回值类型
   private final Map<String, Class<?>> getTypes = new HashMap<>();
+  // 默认构造方法
   private Constructor<?> defaultConstructor;
-
+  // 记录所有属性, set和get属性的并集, key为属性名全大写, value为属性名
   private Map<String, String> caseInsensitivePropertyMap = new HashMap<>();
 
   public Reflector(Class<?> clazz) {

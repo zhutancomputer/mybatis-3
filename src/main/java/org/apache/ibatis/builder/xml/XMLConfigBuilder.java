@@ -111,7 +111,7 @@ public class XMLConfigBuilder extends BaseBuilder {
       // 解析<properties>标签: 将指定文件的properties解析为键值对放到variables中, 后续标签解析会解析占位符${xxx}, 进行替换
       propertiesElement(root.evalNode("properties"));
 
-      // 解析<settings>标签, name=value形式装在Properties中
+      // 解析<settings>标签, name=value形式装在Properties并返回
       Properties settings = settingsAsProperties(root.evalNode("settings"));
 
       // 加载setting配置vfsImpl到configuration, 值以逗号隔开, 但是当前使用的是逗号后面最后一个
@@ -123,10 +123,10 @@ public class XMLConfigBuilder extends BaseBuilder {
       // 解析<typeAliases>标签, 往别名typeAliases的map中注册添加
       typeAliasesElement(root.evalNode("typeAliases"));
 
-      // 解析plugins
+      // 解析plugins, 编写插件
       pluginElement(root.evalNode("plugins"));
 
-      // 解析objectFactory
+      // 解析objectFactory, 处理结果集的时候, 自定义创建对象规则
       objectFactoryElement(root.evalNode("objectFactory"));
 
       // 解析objectWrapperFactory
@@ -233,6 +233,7 @@ public class XMLConfigBuilder extends BaseBuilder {
       String type = context.getStringAttribute("type");
       Properties properties = context.getChildrenAsProperties();
       ObjectFactory factory = (ObjectFactory) resolveClass(type).getDeclaredConstructor().newInstance();
+      // 这里调用ObjectFactory的setProperties方法
       factory.setProperties(properties);
       configuration.setObjectFactory(factory);
     }
