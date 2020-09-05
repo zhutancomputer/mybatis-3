@@ -107,41 +107,32 @@ public class XMLConfigBuilder extends BaseBuilder {
   private void parseConfiguration(XNode root) {
     try {
       // issue #117 read properties first
-
       // 解析<properties>标签: 将指定文件的properties解析为键值对放到variables中, 后续标签解析会解析占位符${xxx}, 进行替换
       propertiesElement(root.evalNode("properties"));
-
       // 解析<settings>标签, name=value形式装在Properties并返回
       Properties settings = settingsAsProperties(root.evalNode("settings"));
-
       // 加载setting配置vfsImpl到configuration, 值以逗号隔开, 但是当前使用的是逗号后面最后一个
       loadCustomVfs(settings);
-
       // 加载setting配置logImpl到configuration
       loadCustomLogImpl(settings);
-
       // 解析<typeAliases>标签, 往别名typeAliases的map中注册添加
       typeAliasesElement(root.evalNode("typeAliases"));
-
       // 解析plugins, 编写插件
       pluginElement(root.evalNode("plugins"));
-
       // 解析objectFactory, 处理结果集的时候, 自定义创建对象规则
       objectFactoryElement(root.evalNode("objectFactory"));
-
       // 解析objectWrapperFactory
       objectWrapperFactoryElement(root.evalNode("objectWrapperFactory"));
-
       // 解析reflectorFactory
       reflectorFactoryElement(root.evalNode("reflectorFactory"));
       settingsElement(settings);
       // read it after objectFactory and objectWrapperFactory issue #631
-
       // 解析<environments>标签, 创建好environment, datasource, transactionFactory
       environmentsElement(root.evalNode("environments"));
+      // 数据库厂商标识加载databaseIdProviderElement
       databaseIdProviderElement(root.evalNode("databaseIdProvider"));
+      // 类型处理器, 数据库类型转为java类型, 如设置参数, 处理结果集
       typeHandlerElement(root.evalNode("typeHandlers"));
-
       // 解析<mappers>标签, 加载mapper.xml文件, 解析mapper接口
       mapperElement(root.evalNode("mappers"));
     } catch (Exception e) {
@@ -222,7 +213,9 @@ public class XMLConfigBuilder extends BaseBuilder {
         String interceptor = child.getStringAttribute("interceptor");
         Properties properties = child.getChildrenAsProperties();
         Interceptor interceptorInstance = (Interceptor) resolveClass(interceptor).getDeclaredConstructor().newInstance();
+        // 这里调用了Interceptor的setProperties方法
         interceptorInstance.setProperties(properties);
+        // 把插件放到configuration对象中
         configuration.addInterceptor(interceptorInstance);
       }
     }

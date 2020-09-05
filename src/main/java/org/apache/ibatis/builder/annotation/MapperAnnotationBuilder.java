@@ -83,7 +83,7 @@ public class MapperAnnotationBuilder {
       // 因为从xml加载的都话添加"namespace:" + type.getName()这个键
       loadXmlResource();
 
-      // 添加接口的键资源, 表示通过接口解析的xml已经解析完成, 但不代表接口已经解析完, 接口解析完的标志是knownMappers存在接口键
+      // 添加接口的键资源, 表示通过接口解析的xml已经解析完成, 但不代表接口已经解析完, 接口解析完的标志是knownMappers存在接口名称的键
       configuration.addLoadedResource(resource);
       assistant.setCurrentNamespace(type.getName());
       parseCache();

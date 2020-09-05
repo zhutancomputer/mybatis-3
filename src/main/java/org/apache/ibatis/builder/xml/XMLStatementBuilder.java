@@ -94,7 +94,9 @@ public class XMLStatementBuilder extends BaseBuilder {
           ? Jdbc3KeyGenerator.INSTANCE : NoKeyGenerator.INSTANCE;
     }
 
-    // 创建sql语句
+    // 创建SqlSource语句
+    // #使用RawSqlSource
+    // $使用DynamicSqlSource, 注意如果定义的properties有同名的键会替换掉, 比如${username}可能会替换掉数据库配置的username
     SqlSource sqlSource = langDriver.createSqlSource(configuration, context, parameterTypeClass);
     StatementType statementType = StatementType.valueOf(context.getStringAttribute("statementType", StatementType.PREPARED.toString()));
     Integer fetchSize = context.getIntAttribute("fetchSize");

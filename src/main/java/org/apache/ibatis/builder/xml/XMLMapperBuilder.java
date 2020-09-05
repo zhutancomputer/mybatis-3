@@ -148,7 +148,7 @@ public class XMLMapperBuilder extends BaseBuilder {
         statementParser.parseStatementNode();
       } catch (IncompleteElementException e) {
 
-        // 在xml中有可能顺序问题, 导致有些标签依赖于其他标签, 那么就会出现解析不完全的情况, 就先放到这里, 后续再继续解析
+        // 在xml中有可能依赖其他mapper文件的情况, 所以需要先存着, 等全部文件加载完后, 进行二次解析
         configuration.addIncompleteStatement(statementParser);
       }
     }

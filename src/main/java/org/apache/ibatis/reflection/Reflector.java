@@ -35,7 +35,7 @@ public class Reflector {
   private final Class<?> type;
   // 可读属性集合, 存在get方法的属性
   private final String[] readablePropertyNames;
-  // 可写属性结婚, 存在set方法的属性
+  // 可写属性集合, 存在set方法的属性
   private final String[] writablePropertyNames;
   // 记录set方法, key是属性名, value是Invoker对象
   private final Map<String, Invoker> setMethods = new HashMap<>();
