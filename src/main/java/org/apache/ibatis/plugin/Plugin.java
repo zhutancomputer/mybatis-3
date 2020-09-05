@@ -42,6 +42,13 @@ public class Plugin implements InvocationHandler {
     this.signatureMap = signatureMap;
   }
 
+  /**
+   * 要是指定该接口的拦截方法, 那么就需要动态代理
+   *
+   * @param target 要代理的对象
+   * @param interceptor 拦截器, 这个对象在构建Plugin对象时需要用到, 用来回调拦截器的方法
+   * @return 返回原对象或者代理后的对象
+   */
   public static Object wrap(Object target, Interceptor interceptor) {
     // 获取用户自定义要拦截的class及其对应的方法
     Map<Class<?>, Set<Method>> signatureMap = getSignatureMap(interceptor);
@@ -61,7 +68,7 @@ public class Plugin implements InvocationHandler {
   @Override
   public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
     try {
-      // 判断拦截的方法中是否包含当前调用的方法
+      // 判断当前类是否包含在拦截的集合中
       Set<Method> methods = signatureMap.get(method.getDeclaringClass());
       if (methods != null && methods.contains(method)) {
         // 包含则走拦截器的方法
